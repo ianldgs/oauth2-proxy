@@ -3,9 +3,9 @@ package validation
 import (
 	"fmt"
 	"os"
-	"regexp"
 	"strings"
 
+	"github.com/dlclark/regexp2"
 	"github.com/oauth2-proxy/oauth2-proxy/v7/pkg/apis/options"
 	"github.com/oauth2-proxy/oauth2-proxy/v7/pkg/ip"
 )
@@ -38,7 +38,7 @@ func validateRoutes(o *options.Options) []string {
 		} else {
 			regex = parts[1]
 		}
-		_, err := regexp.Compile(regex)
+		_, err := regexp2.Compile(regex, regexp2.None)
 		if err != nil {
 			msgs = append(msgs, fmt.Sprintf("error compiling regex /%s/: %v", regex, err))
 		}
@@ -50,7 +50,7 @@ func validateRoutes(o *options.Options) []string {
 func validateRegexes(o *options.Options) []string {
 	msgs := []string{}
 	for _, regex := range o.SkipAuthRegex {
-		_, err := regexp.Compile(regex)
+		_, err := regexp2.Compile(regex, regexp2.None)
 		if err != nil {
 			msgs = append(msgs, fmt.Sprintf("error compiling regex /%s/: %v", regex, err))
 		}

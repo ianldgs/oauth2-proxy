@@ -2475,6 +2475,106 @@ func TestAllowedRequest(t *testing.T) {
 			url:     "/skip/auth/routes/wrong/path",
 			allowed: false,
 		},
+		{
+			name:    "Route denied with wrong path and method",
+			method:  "POST",
+			url:     "/skip/auth/routes/wrong/path",
+			allowed: false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			req, err := http.NewRequest(tc.method, tc.url, nil)
+			assert.NoError(t, err)
+			assert.Equal(t, tc.allowed, proxy.isAllowedRoute(req))
+
+			rw := httptest.NewRecorder()
+			proxy.ServeHTTP(rw, req)
+
+			if tc.allowed {
+				assert.Equal(t, 200, rw.Code)
+				assert.Equal(t, "Allowed Request", rw.Body.String())
+			} else {
+				assert.Equal(t, 403, rw.Code)
+			}
+		})
+	}
+}
+
+func TestAllowedRequestNegativeLookahead(t *testing.T) {
+	upstreamServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(200)
+		_, err := w.Write([]byte("Allowed Request"))
+		if err != nil {
+			t.Fatal(err)
+		}
+	}))
+	t.Cleanup(upstreamServer.Close)
+
+	opts := baseTestOptions()
+	opts.UpstreamServers = options.UpstreamConfig{
+		Upstreams: []options.Upstream{
+			{
+				ID:   upstreamServer.URL,
+				Path: "/",
+				URI:  upstreamServer.URL,
+			},
+		},
+	}
+	opts.SkipAuthRoutes = []string{
+		"^(?!/api)", // any non-api routes
+		"POST=^/api/public-entity/?$",
+	}
+	err := validation.Validate(opts)
+	assert.NoError(t, err)
+	proxy, err := NewOAuthProxy(opts, func(_ string) bool { return true })
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	testCases := []struct {
+		name    string
+		method  string
+		url     string
+		allowed bool
+	}{
+		{
+			name:    "Some static file",
+			method:  "GET",
+			url:     "/static/file.txt",
+			allowed: true,
+		},
+		{
+			name:    "Regex POST allowed",
+			method:  "POST",
+			url:     "/api/public-entity",
+			allowed: true,
+		},
+		{
+			name:    "Regex POST with trailing slash allowed",
+			method:  "POST",
+			url:     "/api/public-entity/",
+			allowed: true,
+		},
+		{
+			name:    "Regex GET api route denied",
+			method:  "GET",
+			url:     "/api/users",
+			allowed: false,
+		},
+		{
+			name:    "Regex POST api route denied",
+			method:  "POST",
+			url:     "/api/users",
+			allowed: false,
+		},
+		{
+			name:    "Regex DELETE api route denied",
+			method:  "DELETE",
+			url:     "/api/users/1",
+			allowed: false,
+		},
 	}
 
 	for _, tc := range testCases {

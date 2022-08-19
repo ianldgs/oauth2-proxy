@@ -11,11 +11,11 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
-	"regexp"
 	"strings"
 	"syscall"
 	"time"
 
+	"github.com/dlclark/regexp2"
 	"github.com/gorilla/mux"
 	"github.com/justinas/alice"
 	ipapi "github.com/oauth2-proxy/oauth2-proxy/v7/pkg/apis/ip"
@@ -64,7 +64,7 @@ var (
 // allowedRoute manages method + path based allowlists
 type allowedRoute struct {
 	method    string
-	pathRegex *regexp.Regexp
+	pathRegex *regexp2.Regexp
 }
 
 // OAuthProxy is the main authentication proxy
@@ -430,7 +430,7 @@ func buildRoutesAllowlist(opts *options.Options) ([]allowedRoute, error) {
 	routes := make([]allowedRoute, 0, len(opts.SkipAuthRegex)+len(opts.SkipAuthRoutes))
 
 	for _, path := range opts.SkipAuthRegex {
-		compiledRegex, err := regexp.Compile(path)
+		compiledRegex, err := regexp2.Compile(path, regexp2.None)
 		if err != nil {
 			return nil, err
 		}
@@ -456,7 +456,7 @@ func buildRoutesAllowlist(opts *options.Options) ([]allowedRoute, error) {
 			path = parts[1]
 		}
 
-		compiledRegex, err := regexp.Compile(path)
+		compiledRegex, err := regexp2.Compile(path, regexp2.None)
 		if err != nil {
 			return nil, err
 		}
@@ -516,10 +516,19 @@ func (p *OAuthProxy) IsAllowedRequest(req *http.Request) bool {
 	return isPreflightRequestAllowed || p.isAllowedRoute(req) || p.isTrustedIP(req)
 }
 
+func isAllowedMethod(req *http.Request, route allowedRoute) bool {
+	return route.method == "" || req.Method == route.method
+}
+
+func isAllowedPath(req *http.Request, route allowedRoute) bool {
+	pass, _ := route.pathRegex.MatchString(req.URL.Path)
+	return pass
+}
+
 // IsAllowedRoute is used to check if the request method & path is allowed without auth
 func (p *OAuthProxy) isAllowedRoute(req *http.Request) bool {
 	for _, route := range p.allowedRoutes {
-		if (route.method == "" || req.Method == route.method) && route.pathRegex.MatchString(req.URL.Path) {
+		if isAllowedMethod(req, route) && isAllowedPath(req, route) {
 			return true
 		}
 	}
